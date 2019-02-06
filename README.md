@@ -1,11 +1,12 @@
 # pyeem
 Python Library for Processing EEM Spectra
 
-## Core Functions to develop and document
+## pyeem functions 
+#### (under development)
 * Import meta-data
 * Import Spectra from instument file(s)
-   - EEM
-   - Absorbance Measurement
+   - EEMs
+   - Absorbance Measurements
 * Subtract blanks
 * Remove Scatter
   - Using interpolation
@@ -13,4 +14,4 @@ Python Library for Processing EEM Spectra
 * Ramam normalize
 * Crop EEM
 * Inner filter effect correction
-* EEM Vizualization
+* **EEM Vizualization**
