@@ -1,36 +1,6 @@
 import pandas as pd
 import numpy as np
 
-
-def conc_to_np_array(metadata):
-    """This function converts concentrations entered as comma separated strings into a numpy array
-
-    Parameters
-    -------------
-    metadata : pandas.DataFrame containing a column 'Conc' with n comma separated values in each row of the column
-                where n corresponds to the number of species
-
-    Return
-    -------------
-    concentration : numpy array size n x number of samples
-
-    """
-
-    # Find the size of array needed to store concentration data and create an an array of zeros
-    conc_temp = metadata['Conc'][0]
-    conc_temp = np.fromstring(conc_temp, sep=',')
-    concentration = np.zeros([len(metadata), len(conc_temp)])
-
-    rows = metadata.index
-
-    for row in rows:
-        conc_temp = metadata['Conc'][row]
-        conc_temp = np.fromstring(conc_temp, sep=',')
-        concentration[row, :] = conc_temp
-
-    return concentration
-
-
 def meta_data_collector(excel_file='Description.xlsx'):
     """This function gathers metadata from an excel sheet and outputs NP arrays containing the data
 
@@ -40,26 +10,21 @@ def meta_data_collector(excel_file='Description.xlsx'):
 
     Return
     -------------
-    file_name_sample
-    folder
-    desc_sample
-    conc
-    raman_area
-    blank
-    sample_type
+    file_name_sample : name of .dat file containing the eem spectra
+    folder : subfolder containing eem files
+    blank : filename of solvent blank, column is expected, but values only required when using blank subtract function
+    raman_area : raman area, column is expected, values only required if using raman normailze function
+    ...(additional user defined meta data column names) 
 
     """
 
     # Read sample data into a pandas dataframe
-    # Drop the column 'Index' - this is used a reference when looking
+    # Drop the column 'Index' - this is used as a reference when looking
     # at the sample list in excel
     metadata_sample = pd.read_excel(excel_file, sheet_name='Sample', skiprows=1)
     metadata_sample = metadata_sample.drop(columns='Index')
     
-    # Create NP Arrays corresponding to all columns. 
-    # 'conc_to_np_array' is used to create a np array from
-    # concentation values that are entered as comma separated values 
-    # in a single excel column
+    # Create NP Arrays corresponding to all columns.
 
     file_name_sample = np.array(metadata_sample['File_Name'])
     folder = np.array(metadata_sample['Folder'])
