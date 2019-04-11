@@ -1,5 +1,5 @@
 # pyeem
-Python Library for Processing EEM Spectra including training and vizualization of convolutional neural networks to identify chemicals or components presnet in samples. 
+Python Library for Processing EEM Spectra including training and vizualization of convolutional neural networks to identify chemicals or components present in samples. 
 
 ## pyeem functions 
 #### (under development)
