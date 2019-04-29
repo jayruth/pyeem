@@ -1,5 +1,5 @@
 __version__ = "0.1"
-from .cleanscan import *
+from .cleanscan_functions import *
 from .gfilter import *
 from .data_process import *
 

@@ -50,61 +50,6 @@ def init_h5_database(database_name, meta_data, overwrite = False):
     hdf.close()
     return
 
-def load_eems(database_name, data_dir):
-    """Add eem spectra to the h5 file created with `init_h5_database`
-    Args:
-        database_name (str): filename and relative path for hdf5 file for saving EEMs
-        data_dir (str): relative path to where EEM data is stored
-         
-    Returns:
-        no retun - EEMs are saved to h5 file for processing with pyeem functions
-    
-    """
-    import h5py
-    import numpy as np
-    from pandas import read_hdf
-    
-    #load EEM file names from the metadata stored in the h5 database as np.array
-    file_names = np.array(read_hdf(database_name, 'meta')['File_Name'])
-    folders = np.array(read_hdf(database_name, 'meta')['Folder'])
-                          
-    #initialize lists to store data
-    eem_list = []
-    names_list = []
-    excitation_list = []
-    emission_list = []
-    
-    for i, (folder, file) in enumerate(zip(folders, file_names)):
-        eem_file = str(data_dir) + str(folder) + '/' + str(file) + '.dat'
-        # first row of EEM file is excitation wavelengths, skip when reading in file
-        eem = np.genfromtxt(eem_file, delimiter = '\t', skip_header=1)
-        # emisson wavelengths stored in first column, store then remove
-        emission = eem[:,0]
-        eem = eem[:,1:]
-        # load the excitaion wavelenths 
-        excitation = np.genfromtxt(eem_file, delimiter = '\t', skip_header=0)[0,1:]
-        eem_list.append(eem)
-        excitation_list.append(excitation)
-        emission_list.append(emission)
-    # convert data to np arrays for saving
-    eem_list = np.array(eem_list)
-    excitation_list = np.array(excitation_list)
-    emission_list = np.array(emission_list)
-    print('EEM data collection complete, final data shape (Sample x Ex x Em):',eem_list.shape)
-    
-    # save data into the h5 file
-    with h5py.File(database_name, "a") as f:
-        dset = f.create_dataset("raw_eems", eem_list.shape, compression="gzip")
-        dset[:] = eem_list
-        dset2 = f.create_dataset("Excitation", excitation_list.shape, compression="gzip")
-        dset2[:] = excitation_list
-        dset3 = f.create_dataset("Emission", emission_list.shape, compression="gzip")
-        dset3[:] = emission_list
-
-    return
-
-
-
 def update_eem_database(database_name, data_dict):
     """Helper function for updating and adding EEM data to h5 file as each step of data processing is completed:
     
@@ -178,76 +123,112 @@ def load_eems(database_name, data_dir):
                                         'em' : emission_list})
     return            
 
-# def blank_subtract(database name):
-#     """Subtract solvent blanks specified in metadata column 'Blanks' from EEMs 
+
+def blank_subtract(database_name, data_dir):
+    """Subtract solvent blanks specified in metadata column 'Blanks' from EEMs 
     
-#     Args:
-#         database_name (str): filename for hdf5 database
+    Args:
+        database_name (str): filename for hdf5 database
+        data_dir (str): relative path to where EEM data is stored
        
-#     Returns:
-#         no retun - blank subtractions results are stored in h5 database under key 'blanks_subtracted'
-#     """
-#     try:
-#         with h5py.File(filename + ".hdf5", 'r') as f:
-
-#             eem_raw = f['Raw Data'][:]
-#             blanks = f['Blank'][:]
-#             file_name = f['File_Name'][:]
-
-#     except OSError:
-#         print(filename + '.hdf5 not found - please run meta_data_collector.py first!')
-#         return
-
-#     blanks_subtracted = np.zeros(eem_raw.shape)
-#     for i in range(eem_raw.shape[0]):
-#         #Find the index of the associated solvent blank
-#         #Note: np.where retuns an array of tuples, adding [0] retuns a numpy array
-#         blank_index = np.where(blanks[i] == file_name)[0]
-#         if len(blank_index) == 0:
-#             errMsg = 'Solvent Blank Associated with sample index ' + str(i) + ' not found.' + \
-#             ' Correct this error in the metadata spreadsheet and re-run meta_data_saver'
-#             raise Exception(errMsg)
-#         if len(blank_index) > 1:
-#             errMsg = 'Multiple solvent blank files for sample index ' + str(i) + ' found at indicies ' \
-#             + str(blank_index) + ' Correct this error in the metadata and re-run pyeem.init_h5_database'
-#             raise Exception(errMsg)
-        
-#         #Take the integer value of blank_index
-#         blank_index = blank_index[0] 
-        
-#         blanks_subtracted[i, :, :] = eem_raw[i, :, :] - eem_raw[blank_index, :, :]
-
-#     # update the database
-#     update_eem_database(filename, {'blanks_subtracted': blanks_subtracted,
-#                                    'eems': blanks_subtracted})
-
-#     return
-
-
-def apply_cleanscan(filename, tol='Default', coeff='Default'):
-    """This applies the scatter removal function 'cleanscan' function to the dataset stored in the specified file"""
+    Returns:
+        no retun - blank subtractions results are stored in h5 database under key 'blanks_subtracted'
+    """
+    from pandas import read_hdf
+    
+    #load EEMs to be blank subtracted
     try:
-        with h5py.File(filename + ".hdf5", 'r') as f:
-            blanks_subtracted = f['blanks_subtracted'][:]
-            ex = f['Excitation'][:]
-            em = f['Emission'][:]
-
+        with h5py.File(database_name, 'r') as f:
+            eems = f['eems'][:]
+        
     except OSError:
-        print(filename + '.hdf5 not found - please run meta_data_collector.py first!')
+        raise OSError(database_name + ' not found - please run pyeem.init_h5_database first')
         return
-        # loop through call to clean function:
-    scatter_removed = np.zeros(blanks_subtracted.shape)
-    excised_values = np.zeros(blanks_subtracted.shape)
-    print('Removing Scatter')
-    for i in tqdm(range(blanks_subtracted.shape[0])):
-        scatter_removed[i, :, :], excised_values[i, :, :], _ = cleanscan(ex[i], em[i], blanks_subtracted[i],
-                                                                                 tol, coeff)
+    except KeyError:
+        raise KeyError('eem data not found - please run pyeem.load_eems first')
+        return
 
-    print('scatter_removed', scatter_removed.shape)
-    print('excised_values', excised_values.shape)
+    
+
+    #load EEM file names from the metadata stored in the h5 database as np.array
+    file_names = np.array(read_hdf(database_name, 'meta')['File_Name'])
+    folders = np.array(read_hdf(database_name, 'meta')['Folder'])
+    blanks = np.array(read_hdf(database_name, 'meta')['Blank'])
+    
+    #intialize location to store blank subtraction results
+    blanks_subtracted = np.zeros(eems.shape)
+
+    for i in range(eems.shape[0]):
+        #Find the index of the associated solvent blank
+        #Note: np.where retuns an array of tuples, adding [0] retuns a numpy array
+        blank_index = np.where(blanks[i] == file_names)[0]
+        if len(blank_index) == 0:
+            errMsg = 'Solvent Blank Associated with sample index ' + str(i) + ' not found.' + \
+            ' Correct this error in the metadata spreadsheet and re-run meta_data_saver'
+            raise Exception(errMsg)
+        if len(blank_index) > 1:
+            errMsg = 'Multiple solvent blank files for sample index ' + str(i) + ' found at indicies ' \
+            + str(blank_index) + ' Correct this error in the metadata and re-run pyeem.init_h5_database'
+            raise Exception(errMsg)
+        
+        #Take the integer value of blank_index
+        blank_index = blank_index[0] 
+        
+        blanks_subtracted[i, :, :] = eems[i, :, :] - eems[blank_index, :, :]
 
     # update the database
-    update_eem_database(filename, {'scatter_removed': scatter_removed,
+    update_eem_database(database_name, {'blanks_subtracted': blanks_subtracted,
+                                   'eems': blanks_subtracted})
+
+    return
+
+
+def apply_cleanscan(database_name, tol='Default', coeff='Default'):
+    """Apply the scatter removal function 'cleanscan' to all EEMs in the the dataset.
+     Args:
+        database_name (str): filename for hdf5 database
+        data_dir (str): relative path to where EEM data is stored
+        tol ():parameters for applying cleanscan (see pyeem.cleanscan documentation)
+        coeff ():parameters for applying cleanscan (see pyeem.cleanscan documentation)
+       
+    Returns:
+        no retun - scatter removal results are stored in h5 database under key 'scatter_removed' 
+        the intermediate results showing what values were removed and replaced by interpolation 
+        are saved as 'excised_values'
+    """
+    #test if function has already run
+    with h5py.File(database_name, 'a') as f:
+        try:
+            f.create_dataset('scatter_removed', (1,1))
+        except RuntimeError:
+            raise Exception('Cleanscan function has already run on this dataset')
+        else:
+            pass
+
+    #load EEMs for scatter removal
+    try:
+        with h5py.File(database_name, 'r') as f:
+            eems = f['eems'][:]
+            ex = f['ex'][:]
+            em = f['em'][:]
+        
+    except OSError:
+        raise OSError(database_name + ' not found - please run pyeem.init_h5_database first')
+        return
+    except KeyError:
+        raise KeyError('eem data not found - please run pyeem.load_eems first')
+        return
+
+    # initalize storage for final and intermediate results
+    scatter_removed = np.zeros(eems.shape)
+    excised_values = np.zeros(eems.shape)
+    print('Removing Scatter')
+    for i in tqdm(range(eems.shape[0])):
+        scatter_removed[i, :, :], excised_values[i, :, :], _ = cleanscan(ex[i], em[i], eems[i],
+                                                                                 tol, coeff)
+
+    # update the database
+    update_eem_database(database_name, {'scatter_removed': scatter_removed,
                                    'excised_values': excised_values,
                                    'eems': scatter_removed})
 
