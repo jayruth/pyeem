@@ -75,6 +75,9 @@ def update_eem_database(database_name, data_dict):
 
 def load_eems(database_name, data_dir):
     """Add eem spectra to the h5 file created with `init_h5_database`
+    EEMs data files must be tab delimited .dat files (standard export format from the Horibe Aqualog)
+    The first row is excitation wavelengths and the first column is emission wavelengths.
+    
     Args:
         database_name (str): filename and relative path for hdf5 file for saving EEMs
         data_dir (str): relative path to where EEM data is stored
@@ -84,44 +87,43 @@ def load_eems(database_name, data_dir):
     
     """
     from pandas import read_hdf
-    
-    #load EEM file names from the metadata stored in the h5 database as np.array
-    file_names = np.array(read_hdf(database_name, 'meta')['File_Name'])
-    folders = np.array(read_hdf(database_name, 'meta')['Folder'])
+
+    try:
+        #load EEM file names from the metadata stored in the h5 database as np.array
+        file_names = np.array(read_hdf(database_name, 'meta')['File_Name'])
+        folders = np.array(read_hdf(database_name, 'meta')['Folder'])
+        
+    except OSError:
+        raise OSError(database_name + ' not found - please run pyeem.init_h5_database first')
+        return
+
+    #test if function has already run (dataset 'raw eems should not exist')
+    with h5py.File(database_name, 'r') as f:
+        try:
+            test = f['raw_eems'][:]
+            raise Exception('Load eems function has already run on this dataset')
+        except KeyError:
+            pass
+            
                           
-    #initialize lists to store data
+    #initialize list to store data
     eem_list = []
-    names_list = []
-    excitation_list = []
-    emission_list = []
     
     for i, (folder, file) in enumerate(zip(folders, file_names)):
         eem_file = str(data_dir) + str(folder) + '/' + str(file) + '.dat'
-        # first row of EEM file is excitation wavelengths, skip when reading in file
-        eem = np.genfromtxt(eem_file, delimiter = '\t', skip_header=1)
-        # emisson wavelengths stored in first column, store then remove
-        emission = eem[:,0]
-        eem = eem[:,1:]
-        # load the excitaion wavelenths 
-        excitation = np.genfromtxt(eem_file, delimiter = '\t', skip_header=0)[0,1:]
+        # first row of EEM file is excitation wavelengths, first column is emission wavelengths
+        eem = np.genfromtxt(eem_file, delimiter = '\t')
         eem_list.append(eem)
-        excitation_list.append(excitation)
-        emission_list.append(emission)
     # convert data to np arrays for saving
     eem_list = np.array(eem_list)
-    excitation_list = np.array(excitation_list)
-    emission_list = np.array(emission_list)
-    print('EEM data collection complete, final data shape (Sample x Ex x Em):',eem_list.shape)
+    
+    print('EEM data collection complete, final data shape (Sample x Ex+1 x Em+1):',eem_list.shape)
     
     # save data into the h5 file
     
     update_eem_database(database_name, {'raw_eems': eem_list,
-                                        'eems': eem_list,
-                                        'raw_ex' : excitation_list,
-                                        'ex' : excitation_list,                                        
-                                        'raw_em' : emission_list,
-                                        'em' : emission_list})
-    return            
+                                        'eems': eem_list})
+    return
 
 
 def blank_subtract(database_name, data_dir):
