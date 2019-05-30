@@ -97,11 +97,11 @@ def load_eems(database_name, data_dir):
         raise OSError(database_name + ' not found - please run pyeem.init_h5_database first')
         return
 
-    #test if function has already run (dataset 'raw eems should not exist')
+    #test if function has already run (dataset 'raw_eems' should not exist)
     with h5py.File(database_name, 'r') as f:
         try:
             test = f['raw_eems'][:]
-            raise Exception('Load eems function has already run on this dataset')
+            raise Exception('`load_eems` function has already run on this dataset')
         except KeyError:
             pass
             
@@ -126,12 +126,11 @@ def load_eems(database_name, data_dir):
     return
 
 
-def blank_subtract(database_name, data_dir):
+def blank_subtract(database_name):
     """Subtract solvent blanks specified in metadata column 'Blanks' from EEMs 
     
     Args:
         database_name (str): filename for hdf5 database
-        data_dir (str): relative path to where EEM data is stored
        
     Returns:
         no retun - blank subtractions results are stored in h5 database under key 'blanks_subtracted'
@@ -144,15 +143,20 @@ def blank_subtract(database_name, data_dir):
             eems = f['eems'][:]
         
     except OSError:
-        raise OSError(database_name + ' not found - please run pyeem.init_h5_database first')
+        raise OSError(database_name + ' not found - please run pyeem.init_h5_database and load_eems first')
         return
     except KeyError:
         raise KeyError('eem data not found - please run pyeem.load_eems first')
         return
-
     
-
-    #load EEM file names from the metadata stored in the h5 database as np.array
+    #test if function has already run (dataset 'blanks_subtracted' should not exist)
+    with h5py.File(database_name, 'r') as f:
+        try:
+            test = f['blanks_subtracted'][:]
+            raise Exception('`blank_subtract` function has already run on this dataset')
+        except KeyError:
+            pass
+    #load EEM file names from the metadata stored in the h5 database as np.arrays
     file_names = np.array(read_hdf(database_name, 'meta')['File_Name'])
     folders = np.array(read_hdf(database_name, 'meta')['Folder'])
     blanks = np.array(read_hdf(database_name, 'meta')['Blank'])
@@ -166,17 +170,21 @@ def blank_subtract(database_name, data_dir):
         blank_index = np.where(blanks[i] == file_names)[0]
         if len(blank_index) == 0:
             errMsg = 'Solvent Blank Associated with sample index ' + str(i) + ' not found.' + \
-            ' Correct this error in the metadata spreadsheet and re-run meta_data_saver'
+            ' Correct this error in the metadata and re-run'
             raise Exception(errMsg)
         if len(blank_index) > 1:
             errMsg = 'Multiple solvent blank files for sample index ' + str(i) + ' found at indicies ' \
-            + str(blank_index) + ' Correct this error in the metadata and re-run pyeem.init_h5_database'
+            + str(blank_index) + ' Correct this error in the metadata'
             raise Exception(errMsg)
         
         #Take the integer value of blank_index
         blank_index = blank_index[0] 
         
-        blanks_subtracted[i, :, :] = eems[i, :, :] - eems[blank_index, :, :]
+        # subtract flourescent intensities
+        blanks_subtracted[i, 1:, 1:] = eems[i, 1:, 1:] - eems[blank_index, 1:, 1:]
+        # add excitiaton then emisson wavelenths to the first row and column
+        blanks_subtracted[i,0,1:] = eems[i,0,1:]
+        blanks_subtracted[i,1:,0] = eems[i,1:,0]
 
     # update the database
     update_eem_database(database_name, {'blanks_subtracted': blanks_subtracted,
@@ -189,45 +197,53 @@ def apply_cleanscan(database_name, tol='Default', coeff='Default'):
     """Apply the scatter removal function 'cleanscan' to all EEMs in the the dataset.
      Args:
         database_name (str): filename for hdf5 database
-        data_dir (str): relative path to where EEM data is stored
-        tol ():parameters for applying cleanscan (see pyeem.cleanscan documentation)
-        coeff ():parameters for applying cleanscan (see pyeem.cleanscan documentation)
+        tol (np.array, optional):parameters for applying cleanscan (see `pyeem.cleanscan` documentation)
+        coeff (np.array, optional):parameters for applying cleanscan (see `pyeem.cleanscan` documentation)
        
     Returns:
         no retun - scatter removal results are stored in h5 database under key 'scatter_removed' 
-        the intermediate results showing what values were removed and replaced by interpolation 
-        are saved as 'excised_values'
+        and the intermediate results showing what values were removed and replaced by interpolation 
+        are saved under key 'excised_values'
     """
-    #test if function has already run
-    with h5py.File(database_name, 'a') as f:
-        try:
-            f.create_dataset('scatter_removed', (1,1))
-        except RuntimeError:
-            raise Exception('Cleanscan function has already run on this dataset')
-        else:
-            pass
-
     #load EEMs for scatter removal
     try:
         with h5py.File(database_name, 'r') as f:
             eems = f['eems'][:]
-            ex = f['ex'][:]
-            em = f['em'][:]
         
     except OSError:
-        raise OSError(database_name + ' not found - please run pyeem.init_h5_database first')
+        raise OSError(database_name + ' not found - please run `pyeem.init_h5_database` and `pyeem.load_eems` first')
         return
     except KeyError:
-        raise KeyError('eem data not found - please run pyeem.load_eems first')
+        raise KeyError('eem data not found - please run `pyeem.load_eems` first')
         return
 
+    #test if function has already run (dataset 'scatter_removed' should not exist)
+    with h5py.File(database_name, 'r') as f:
+        try:
+            test = f['scatter_removed'][:]
+            raise Exception('`apply_cleansscan` function has already run on this dataset')
+        except KeyError:
+            pass
+
+    
     # initalize storage for final and intermediate results
     scatter_removed = np.zeros(eems.shape)
     excised_values = np.zeros(eems.shape)
     print('Removing Scatter')
     for i in tqdm(range(eems.shape[0])):
-        scatter_removed[i, :, :], excised_values[i, :, :], _ = cleanscan(ex[i], em[i], eems[i],
-                                                                                 tol, coeff)
+        #separeate eems into excitaion and emisson wavelenghts and fluorescence values
+        ex = eems[i,0,1:]
+        em = eems[i,1:,0]
+        fl = eems[i,1:,1:]
+        
+        #remove scatter using cleanscan
+        scatter_removed[i, 1:, 1:], excised_values[i, 1:, 1:], _ = cleanscan(ex, em, fl, tol, coeff)
+        
+        #add excitation and emission values to new datasets
+        scatter_removed[i,0,1:] = ex
+        scatter_removed[i,1:,0] = em
+        excised_values[i,0,1:] = ex
+        excised_values[i,1:,0] = em
 
     # update the database
     update_eem_database(database_name, {'scatter_removed': scatter_removed,
@@ -237,20 +253,38 @@ def apply_cleanscan(database_name, tol='Default', coeff='Default'):
     return
 
 
-def apply_spectrasmooth(filename, sigma='default', truncate='default'):
-    """This function takes in a filename, which was previously altered by the DeScatter function,
-    clean_data.  It relies upon the presence of 'scatter_removed', a column created in that section.
-    ==============  ================================================
-    Input            Description
-    ==============  ================================================
-    *filename*       Name (including directory) of desired output h5 file.
-    ==============  ================================================"""
+def apply_spectrasmooth(database_name, sigma='default', truncate='default'):
+    """Apply 2D gausian smoothing and zero negative values for all EEMs in the the dataset.
+     Args:
+        database_name (str): filename for hdf5 database
+        sigma ( ,optional):
+        truncate( ,optional):
+       
+    Returns:
+        no retun - smoothing results are stored in h5 database under key 'eems_smooth' 
+    """
+    
+    #load EEMs for smoothing
     try:
-        with h5py.File(filename+".hdf5", 'r') as f:
-            eem = f['scatter_removed'][:]
+        with h5py.File(database_name, 'r') as f:
+            eems = f['eems'][:]
+        
     except OSError:
-        print(filename+'.hdf5 not found - please run meta_data_collector.py first!')
+        raise OSError(database_name + ' not found - please run `pyeem.init_h5_database` and `pyeem.load_eems` first')
         return
+    except KeyError:
+        raise KeyError('eem data not found - please run `pyeem.load_eems` first')
+        return
+
+    #test if function has already run (dataset 'eems_smooth' should not exist)
+    with h5py.File(database_name, 'r') as f:
+        try:
+            test = f['eems_smooth'][:]
+            raise Exception('`apply_spectrasmooth` function has already run on this dataset')
+        except KeyError:
+            pass
+    
+    # set parameters for smoothing   
     if sigma == 'default':
         sigma = 2
     else:
@@ -260,49 +294,64 @@ def apply_spectrasmooth(filename, sigma='default', truncate='default'):
     else:
         pass
 
-    smoothed = []
-    for i in tqdm(range(eem.shape[0])):
-        smoothed.append(spectrasmooth(eem[i], sigma, truncate))
-    smoothed = np.array(smoothed)
-
-    # zero negative values
-    smoothed[smoothed < 0] = 0
-
-    update_eem_database(filename, {'eems_smooth': smoothed,
-                                   'eems': smoothed})
-
-    # with h5py.File(filename+".hdf5", 'a') as f:
-    #     try:
-    #         del f['eems_smooth']
-    #     except KeyError:
-    #         pass
-    #     dset = f.create_dataset("eem_smooth", smoothed.shape, compression="gzip")
-    #     dset[:] = smoothed
+    # initalize storage for smoothing results
+    smoothed = np.zeros(eems.shape)
+    
+    for i in tqdm(range(eems.shape[0])):
+        #separeate eems into excitaion and emisson wavelenghts and fluorescence values
+        ex = eems[i,0,1:]
+        em = eems[i,1:,0]
+        fl = eems[i,1:,1:]
+        
+        #apply gausian smoothing
+        smoothed[i, 1:, 1:] = spectrasmooth(fl, sigma, truncate)
+        
+        #add excitation and emission values to new dataset
+        smoothed[i,0,1:] = ex
+        smoothed[i,1:,0] = em
+      
+        # zero negative values
+        smoothed[i, 1:, 1:][smoothed[i, 1:, 1:] < 0] = 0
 
     print("Finished smoothing, negative values set to zero")
+    
+    update_eem_database(database_name, {'eems_smooth': smoothed,
+                                       'eems': smoothed})   
     return
 
 
-def crop_eems(filename, crop_spec='default'):
-    """Crops eems according to crop_spec (dictionary) and saves them to the hdf5 file"""
+def crop_eems(database_name, crop_spec):
+    """Crop all EEMs in the the dataset.
+     Args:
+        database_name (str): filename for hdf5 database
+        crop_spec (dict): excitaiton and emission values to crop at for example:
+                        {'ex': (500, 224), 'em': (245.917, 572.284)}
+                        values must match exactly with excitaiton and emission values
+                        and must be ordered as the values occur in the data
+    Returns:
+        no retun - cropped eems are stored in h5 database under key 'eems_cropped' 
+    """
+    
+    #load EEMs for cropping
     try:
-        with h5py.File(filename + ".hdf5", 'r') as f:
-
-            eems_smooth = f['eems_smooth'][:]
-            ex = f['Excitation'][:]
-            em = f['Emission'][:]
+        with h5py.File(database_name, 'r') as f:
+            eems = f['eems'][:]
+            starting_shape = eems.shape
+        
     except OSError:
-        print(filename + '.hdf5 not found - please run meta_data_collector.py first!')
+        raise OSError(database_name + ' not found - please run `pyeem.init_h5_database` and `pyeem.load_eems` first')
         return
-
-    if crop_spec == 'default':
-        crop_spec = {'ex': (500, 224),
-                     'em': (245.917, 572.284)}
-    else:
-        pass
-
+    except KeyError:
+        raise KeyError('eem data not found - please run `pyeem.load_eems` first')
+        return
+   
+    #separeate eems into excitaion and emisson wavelenghts and fluorescence values
+    ex = eems[:,0,1:]
+    em = eems[:,1:,0]
+    fl = eems[:,1:,1:]
     # find the indicies for each sepecified wavelength and convert to integers for slicing
     # this is done assuming all ex and em spectra are the same
+        
     crop_spec['ex_ind'] = (np.where(ex[0] == crop_spec['ex'][0]), np.where(ex[0] == crop_spec['ex'][1]))
     if len(crop_spec['ex_ind'][0][0]) == 0 or len(crop_spec['ex_ind'][1][0]) == 0:
         errMsg = "Excitation crop wavelength not found.  Verify 'crop_spec['ex']' contains wavelengths found in Excitation"
@@ -320,58 +369,90 @@ def crop_eems(filename, crop_spec='default'):
     ex_crop = ex[:, crop_spec['ex_ind'][0]:crop_spec['ex_ind'][1] + 1]
     em_crop = em[:, crop_spec['em_ind'][0]:crop_spec['em_ind'][1] + 1]
     # crop eem data
-    eems_cropped = eems_smooth[:,
+    fl_crop = fl[:,
                    crop_spec['em_ind'][0]:crop_spec['em_ind'][1] + 1,
                    crop_spec['ex_ind'][0]:crop_spec['ex_ind'][1] + 1]
 
-    update_eem_database(filename, {'eems_cropped': eems_cropped,
-                                   'eems': eems_cropped,
-                                   'ex_crop': ex_crop,
-                                   'em_crop': em_crop})
-
+    #intialize location to store cropping results
+    new_shape = (fl_crop.shape[0], fl_crop.shape[1]+1, fl_crop.shape[2]+1)
+    eems_cropped = np.zeros(new_shape)
+    #store cropped flourescence values and cropped ex and em values together
+    eems_cropped[:, 1:, 1:] = fl_crop
+    #add excitation and emission values to new dataset
+    eems_cropped[:,0,1:] = ex_crop
+    eems_cropped[:,1:,0] = em_crop
+                                   
     print("EEMs cropped according to crop_spec")
     print(crop_spec)
-    print("Starting shape", eems_smooth.shape, '(sample x em x ex)')
-    print("Cropped shape", eems_cropped.shape, '(sample x em x ex)')
-
+    print("Starting shape", starting_shape, '(Sample x Em+1 x Ex+1)')
+    print("Cropped shape", eems_cropped.shape, '(Sample x Em+1 x Ex+1)')
+    
+    update_eem_database(database_name, {'eems_cropped': eems_cropped,
+                                   'eems': eems_cropped})
+    
     return
 
 
-def raman_normalize(filename):
+def raman_normalize(database_name):
     """Raman normaization - element-wise division of the eem spectra by area under the ramam peak.
-    See reference Murphy *** """
+    See reference Murphy et al. "Measurement of Dissolved Organic Matter Fluorescence in Aquatic 
+    Environments: An Interlaboratory Comparison" 2010 Environmental Science and Technology.
+     Args:
+        database_name (str): filename for hdf5 database
+        Note-  'Raman_Area' column is required in the metadata to use this function.
+        
+    Returns:
+        no retun - raman normalized eems are stored in h5 database under key 'eems_ru' 
+    """
+    from pandas import read_hdf
+    #load EEMs for normalization
     try:
-        with h5py.File(filename + ".hdf5", 'r') as f:
-
-            eems_cropped = f['eems_cropped'][:]
-            raman_area = f['Raman_Area'][:]
+        with h5py.File(database_name, 'r') as f:
+            eems = f['eems'][:]
 
     except OSError:
-        print(filename + '.hdf5 not found - please run meta_data_collector.py first!')
+        raise OSError(database_name + ' not found - please run `pyeem.init_h5_database` and `pyeem.load_eems` first')
+        return
+    except KeyError:
+        raise KeyError('eem data not found - please run `pyeem.load_eems` first')
+        return
+    #load values for raman normalization
+    try:
+        #load raman area from the metadata stored in the h5 database as np.array
+        raman_area = np.array(read_hdf(database_name, 'meta')['Raman_Area'])
+
+    except KeyError:
+        raise KeyError('Raman_Area not found.  This must be included in the meta data to use this function')
         return
 
-    # Raman Unit Normalization
-    eems_ru = np.zeros(eems_cropped.shape)
-    for i in range(eems_cropped.shape[0]):
-        eems_ru[i, :, :] = eems_cropped[i, :, :] / raman_area[i]
+    
+    #test if function has already run (dataset 'eems_ru' should not exist)
+    with h5py.File(database_name, 'r') as f:
+        try:
+            test = f['eems_ru'][:]
+            raise Exception('`raman_normalize` function has already run on this dataset')
+        except KeyError:
+            pass
+    
+    #intialize storage for normaized eems
+    eems_ru = np.zeros(eems.shape)
+    
+    for i in tqdm(range(eems.shape[0])):
+        #separeate eems into excitaion and emisson wavelenghts and fluorescence values
+        ex = eems[i,0,1:]
+        em = eems[i,1:,0]
+        fl = eems[i,1:,1:]
+        
+        #raman normailze
+        eems_ru[i, 1:, 1:] = eems[i, 1:, 1:] / raman_area[i]
+        
+        #add excitation and emission values to new dataset
+        eems_ru[i,0,1:] = ex
+        eems_ru[i,1:,0] = em
 
-    update_eem_database(filename, {'eems_ru': eems_ru,
+
+    update_eem_database(database_name, {'eems_ru': eems_ru,
                                    'eems': eems_ru})
-
-    # # save the raman normalized data into the hdf5
-    # with h5py.File(filename + ".hdf5", 'a') as f:
-    #     # check for existing dataset so data can be overwritten
-    #     try:
-    #         del f['eem_ru']
-    #         print('Overwritting existing data raman normalized data')
-    #
-    #     except KeyError:
-    #         pass
-    #
-    #     dset = f.create_dataset("eem_ru", eem_ru.shape, compression="gzip")
-    #     dset[:] = eem_ru
-    #     print('Ramam normalization complete')
-    #     print(eem_ru.shape)
 
     return
 

@@ -6,7 +6,20 @@ import scipy.interpolate
 
 
 def cleanscan(ex, em, fl, tol='Default', coeff='Default'):
+    """Function for removing Raleigh and Raman scatter by excising values in the areas where scatter is expected
+    and replacing the missung values using 2d interpolation.  This function is based on the following publication: 
+    Zepp et al. Dissolved organic fluorophores in southeastern US coastal waters: correction method for eliminating 
+    Rayleigh and Raman scattering peaks in excitation–emission matrices. Marine Chemistry. 2004   
     
+    Args:
+        ex (np.array): vector of excitation wavelengths
+        em (np.array): vector of emission wavelengths
+        fl (np.array): matrix of flourescence intensities having shape ex x em
+    
+    Returns:
+        meta_data (pandas DataFrame): meta data in a pandas data frame
+    """
+
     # define default fitting coefficients (values from Zepp et. al. 2004)
     if coeff is 'Default':
         coeff = np.array(([0, 1.0000, 0],
