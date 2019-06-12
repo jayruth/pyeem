@@ -29,7 +29,8 @@ def init_h5_database(database_name, meta_data, overwrite = False):
     Args:
         database_name (str): filename and relative path for h5 database
         meta_data (pandas DataFrame): DataFrame containing eem meta data from `pyeem.load_eem_meta_data` 
-        function or created manually - see pyeem.load_eem_meta_data for required columns
+        function or created manually - see pyeem.load_eem_meta_data for required columns.  NOTE: do not use
+        spaces or decimals in column names as this causes a warning when saving to H5 file format
         
     Returns:
         no retun - data is saved as h5 and may be loaded using `pyeem.load_eem_data`

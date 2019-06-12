@@ -1,3 +1,33 @@
+import h5py
+import matplotlib.pyplot as plt
+from ipywidgets import interact, fixed
+from pandas import read_hdf
+import numpy as np
+
+def view_eems(database_name):
+    file_names = np.array(read_hdf(database_name, 'meta')['File_Name'])
+    def plot_eem(database_name, i):
+        
+        fig = plt.figure(figsize=(4,3))
+        with h5py.File(database_name, 'r') as f:
+            eem = f['eems'][i]
+        ex = eem[0,1:]
+        em = eem[1:,0]
+        fl = eem[1:,1:]
+        plt.contourf(ex, em, fl)
+        plt.colorbar()
+        plt.title(file_names[i])
+        return 
+    
+    print(file_names.shape[0])
+    interact(plot_eem, database_name=fixed(database_name), i=(0,file_names.shape[0]-1))
+    return
+
+
+#################################
+####### Old visual functions from class work with Ben, need to adapt to new data structure
+################################
+
 import numpy as np
 import pandas as pd
 #import plotly.plotly as py
