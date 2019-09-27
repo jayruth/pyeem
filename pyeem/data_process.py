@@ -457,3 +457,15 @@ def raman_normalize(database_name):
 
     return
 
+def load_meta_data(database_name):
+    """Load the pandas dataframe containing meta data from an h5 file created using pyeem data processing functions 
+     Args:
+        database_name (str): filename (and relative path) for hdf5 database
+        
+    Returns:
+        meta_data - pandas data frame containing EEM meta data 
+    """
+    from pandas import read_hdf
+    meta_data = read_hdf(database_name, 'meta')
+    
+    return meta_data
