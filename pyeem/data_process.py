@@ -7,6 +7,7 @@ import pandas as pd
 from tqdm import tqdm
 #local imports
 from pyeem import cleanscan
+from pyeem import trucate_below_excitation
 from pyeem import spectrasmooth
 
 def load_eem_meta_data(excel_file):
@@ -253,6 +254,57 @@ def apply_cleanscan(database_name, tol='Default', coeff='Default'):
 
     return
 
+def apply_truncate(database_name):
+    """Apply the function `trucate_below_excitation` to all EEMs in the the dataset.
+     Args:
+        database_name (str): filename for hdf5 database
+               
+    Returns:
+        no retun - truncation results are stored in h5 database under key 'trunc' 
+        and 'eems' are updated with these values
+    """
+    #load EEMs for truncation
+    try:
+        with h5py.File(database_name, 'r') as f:
+            eems = f['eems'][:]
+        
+    except OSError:
+        raise OSError(database_name + ' not found - please run `pyeem.init_h5_database` and `pyeem.load_eems` first')
+        return
+    except KeyError:
+        raise KeyError('eem data not found - please run `pyeem.load_eems` first')
+        return
+
+    #test if function has already run (dataset 'trunc' should not exist)
+    with h5py.File(database_name, 'r') as f:
+        try:
+            test = f['trunc'][:]
+            raise Exception('`trucate_below_excitation` function has already run on this dataset')
+        except KeyError:
+            pass
+
+    
+    # initalize storage for final and intermediate results
+    trunc = np.zeros(eems.shape)
+    print('Truncating EEMs: replacing emission values below the excitation wavelength with zeros')
+    for i in tqdm(range(eems.shape[0])):
+        #separeate eems into excitaion and emisson wavelenghts and fluorescence values
+        ex = eems[i,0,1:]
+        em = eems[i,1:,0]
+        fl = eems[i,1:,1:]
+        
+        #apply truncation function
+        trunc[i, 1:, 1:] = trucate_below_excitation(ex, em, fl)
+        
+        #add excitation and emission values to new datasets
+        trunc[i,0,1:] = ex
+        trunc[i,1:,0] = em
+        
+    # update the database
+    update_eem_database(database_name, {'trunc': trunc,
+                                   'eems': trunc})
+
+    return
 
 def apply_spectrasmooth(database_name, sigma='default', truncate='default'):
     """Apply 2D gausian smoothing and zero negative values for all EEMs in the the dataset.

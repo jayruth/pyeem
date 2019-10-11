@@ -114,6 +114,30 @@ def cleanscan_viz(ex, em, fl, fl_NaN, fl_interp, fl_clean):
     return fig
 
 
+def trucate_below_excitation(ex, em, fl):
+    """Replace values below the excitation wavelength with zero   
+    
+    Args:
+        ex (np.array): vector of excitation wavelengths
+        em (np.array): vector of emission wavelengths
+        fl (np.array): matrix of flourescence intensities with shape ex x em
+    
+    Returns:
+        eem_trunc (np.array): matrix of flourescence intensities with values below
+                                the excitation wavelength replaced with zeros
+    """
+   
+    # create a meshgrid of excitation and emission wavelenghts
+    grid_ex,grid_em = np.meshgrid(ex, em)
 
+    # create a logical array with 'True' where values should be set to zero
+    values_to_zero = (grid_em - grid_ex) < 0
+
+    # create an array with 'nan' in the place of values where scatter is located
+    # this may be used for vizualizing the locations of scatter removal
+    eem_trunc = fl
+    eem_trunc[values_to_zero] = 0
+
+    return eem_trunc 
 
 
